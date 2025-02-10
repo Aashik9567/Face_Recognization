@@ -1,0 +1,10 @@
+fastapi
+hypercorn
+torch
+opencv-python
+numpy
+ultralytics
+facenet-pytorch
+cloudinary
+requests
+scipy
