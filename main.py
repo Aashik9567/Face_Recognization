@@ -17,6 +17,14 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
+# Optionally, download the model if not present
+MODEL_PATH = "yolov8_face.pt"
+MODEL_URL = os.environ.get("YOLO_MODEL_URL")
+if not os.path.exists(MODEL_PATH) and MODEL_URL:
+    from model_loader import download_model
+    print("Model file not found. Downloading it...")
+    download_model(MODEL_URL, MODEL_PATH)
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO, 
@@ -32,7 +40,7 @@ cloudinary.config(
 
 class AttendanceSystem:
     def __init__(self, 
-                 yolo_model_path='yolov8_face.pt', 
+                 yolo_model_path=MODEL_PATH, 
                  encodings_path='known_encodings.npy', 
                  names_path='known_names.npy', 
                  confidence_threshold=0.79,
