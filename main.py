@@ -6,7 +6,7 @@ import logging
 import requests
 import cloudinary
 import cloudinary.uploader
-from fastapi import FastAPI, HTTPException, File, UploadFile
+from fastapi import FastAPI, HTTPException, Request, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from ultralytics import YOLO
