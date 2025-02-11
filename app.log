@@ -1,0 +1,18 @@
+2025-02-11 20:52:24,207 - main - INFO - Loaded 1114 known faces
+2025-02-11 20:52:24,418 - main - INFO - AttendanceSystem initialized successfully
+2025-02-11 20:52:24,419 - hypercorn.error - INFO - Running on http://0.0.0.0:8000 (CTRL + C to quit)
+2025-02-11 20:55:04,874 - main - INFO - Successfully uploaded image to Cloudinary
+2025-02-11 20:55:06,973 - main - INFO - Detected 4 faces in image
+2025-02-11 20:55:07,124 - main - ERROR - Error processing request: Object of type bool_ is not JSON serializable
+2025-02-11 20:55:58,057 - main - INFO - Successfully uploaded image to Cloudinary
+2025-02-11 20:55:59,858 - main - INFO - Detected 4 faces in image
+2025-02-11 20:56:00,002 - main - ERROR - Error processing request: Object of type bool_ is not JSON serializable
+2025-02-11 20:56:09,077 - main - INFO - Successfully uploaded image to Cloudinary
+2025-02-11 20:56:10,243 - main - INFO - Detected 4 faces in image
+2025-02-11 20:56:10,344 - main - ERROR - Error processing request: Object of type bool_ is not JSON serializable
+2025-02-11 21:01:07,611 - main - INFO - Successfully uploaded image to Cloudinary
+2025-02-11 21:01:09,054 - main - INFO - Detected 4 faces in image
+2025-02-11 21:01:09,197 - main - ERROR - Error processing request: Object of type bool_ is not JSON serializable
+2025-02-11 21:01:51,303 - main - INFO - Successfully uploaded image to Cloudinary
+2025-02-11 21:01:53,726 - main - INFO - Detected 3 faces in image
+2025-02-11 21:01:53,824 - main - ERROR - Error processing request: Object of type bool_ is not JSON serializable

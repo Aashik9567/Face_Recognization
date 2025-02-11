@@ -12,305 +12,272 @@ from fastapi.responses import JSONResponse
 from ultralytics import YOLO
 from facenet_pytorch import InceptionResnetV1
 from scipy.spatial.distance import cosine
-from dotenv import load_dotenv
-from typing import Optional, Dict, List
-import sys
+import io
 
-# Load environment variables from .env file
-load_dotenv()
-
-# Configure logging with more detailed format
+# Configure logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler('app.log')
-    ]
+    level=logging.INFO, 
+    format='%(asctime)s - %(levelname)s: %(message)s'
 )
 
-logger = logging.getLogger(__name__)
-
-# Cloudinary Configuration with better error handling
-try:
-    cloudinary.config(
-        cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
-        api_key=os.getenv("CLOUDINARY_API_KEY"),
-        api_secret=os.getenv("CLOUDINARY_API_SECRET")
-    )
-except Exception as e:
-    logger.error(f"Failed to configure Cloudinary: {e}")
-    raise
+# Cloudinary Configuration
+cloudinary.config(
+    cloud_name="aashiqmahato",  
+    api_key="822293972657394",        
+    api_secret="yGUpxVroCkjj40nThHOv56u2CZM"  
+)
 
 class AttendanceSystem:
     def __init__(self, 
-                 yolo_model_path: str = 'yolov8_face.pt',
-                 encodings_path: str = 'known_encodings.npy',
-                 names_path: str = 'known_names.npy',
-                 confidence_threshold: float = 0.79,
-                 recognition_threshold: float = 0.6):
+                 yolo_model_path='/Users/aashiqmahato/Downloads/project/Face detection api/yolov8_face.pt', 
+                 encodings_path='known_encodings.npy', 
+                 names_path='known_names.npy', 
+                 confidence_threshold=0.79,
+                 recognition_threshold=0.6):
         """
-        Initialize Attendance System components with type hints and better error handling.
+        Initialize Attendance System components
         """
+        # Face Detection Model
+        self.face_detector = YOLO(yolo_model_path)
+        
+        # Face Recognition Setup
         try:
-            # Face Detection Model
-            self.face_detector = YOLO(yolo_model_path)
-            
-            # Face Recognition Setup
-            try:
-                self.known_encodings = np.load(encodings_path)
-                self.known_names = np.load(names_path)
-                logger.info(f"Loaded {len(self.known_names)} known faces")
-            except Exception as e:
-                logger.warning(f"Error loading encodings: {e}. Starting with empty arrays.")
-                self.known_encodings = np.array([])
-                self.known_names = np.array([])
-            
-            # Face Embedding Model
-            self.embedding_model = InceptionResnetV1(pretrained='vggface2').eval()
-            
-            # Move model to GPU if available
-            if torch.cuda.is_available():
-                self.embedding_model = self.embedding_model.cuda()
-                logger.info("Using GPU for face embedding model")
-            
-            # Thresholds
-            self.confidence_threshold = confidence_threshold
-            self.recognition_threshold = recognition_threshold
-            
+            self.known_encodings = np.load(encodings_path)
+            self.known_names = np.load(names_path)
+            logging.info(f"Loaded {len(self.known_names)} known faces")
         except Exception as e:
-            logger.error(f"Failed to initialize AttendanceSystem: {e}")
-            raise
+            logging.error(f"Error loading encodings: {e}")
+            self.known_encodings = np.array([])
+            self.known_names = np.array([])
+        
+        # Face Embedding Model
+        self.embedding_model = InceptionResnetV1(pretrained='vggface2').eval()
+        
+        # Thresholds
+        self.confidence_threshold = confidence_threshold
+        self.recognition_threshold = recognition_threshold
 
-    async def upload_to_cloudinary(self, file: UploadFile) -> str:
+    def upload_to_cloudinary(self, file):
         """
-        Upload image to Cloudinary with improved error handling.
+        Upload image to Cloudinary
+        
+        Args:
+            file (UploadFile): Image file to upload
+        
+        Returns:
+            str: Cloudinary URL of the uploaded image
         """
         try:
-            file_contents = await file.read()
+            # Read file contents
+            file_contents = file.file.read()
+            
+            # Upload to Cloudinary
             upload_result = cloudinary.uploader.upload(
-                file_contents,
-                folder="attendance_system",
-                resource_type="auto"
+                file_contents, 
+                folder="attendance_system"
             )
-            logger.info(f"Successfully uploaded image to Cloudinary")
+            
+            # Return secure URL
             return upload_result['secure_url']
         except Exception as e:
-            logger.error(f"Cloudinary upload error: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to upload image to Cloudinary: {str(e)}"
-            )
+            logging.error(f"Cloudinary upload error: {e}")
+            raise HTTPException(status_code=500, detail=f"Upload to Cloudinary failed: {str(e)}")
 
-    def download_image_from_url(self, image_url: str) -> np.ndarray:
+    def download_image_from_url(self, image_url):
         """
-        Download image from URL with improved error handling and timeout.
+        Download image from URL
+        
+        Args:
+            image_url (str): URL of the image
+        
+        Returns:
+            np.ndarray: Image as numpy array
         """
         try:
-            response = requests.get(image_url, timeout=10)
+            response = requests.get(image_url)
             response.raise_for_status()
             
+            # Convert to numpy array
             image_array = np.frombuffer(response.content, np.uint8)
             image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
             
             if image is None:
                 raise ValueError("Failed to decode image")
-                
+            
             return image
-        except requests.RequestException as e:
-            logger.error(f"Failed to download image: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to download image: {str(e)}"
-            )
         except Exception as e:
-            logger.error(f"Error processing downloaded image: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Error processing image: {str(e)}"
-            )
+            logging.error(f"Image download error: {e}")
+            raise
 
-    def detect_faces(self, image: np.ndarray) -> List[Dict]:
+    def detect_faces(self, image):
         """
-        Detect faces in an image using YOLO with improved error handling.
+        Detect faces in an image using YOLO
+        
+        Args:
+            image (np.ndarray): Input image
+        
+        Returns:
+            list: Detected faces with coordinates and confidence
         """
-        try:
-            results = self.face_detector(image)
-            detected_faces = []
+        results = self.face_detector(image)
+        
+        detected_faces = []
+        for result in results:
+            boxes = result.boxes
             
-            for result in results:
-                boxes = result.boxes
-                for box in boxes:
-                    confidence = float(box.conf[0])
-                    if confidence >= self.confidence_threshold:
-                        x1, y1, x2, y2 = map(int, box.xyxy[0])
-                        face_crop = image[y1:y2, x1:x2]
-                        face_resized = cv2.resize(face_crop, (160, 160))
-                        
-                        detected_faces.append({
-                            'bbox': [x1, y1, x2, y2],
-                            'confidence': confidence,
-                            'face_image': face_resized
-                        })
-            
-            logger.info(f"Detected {len(detected_faces)} faces in image")
-            return detected_faces
-        except Exception as e:
-            logger.error(f"Error in face detection: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Face detection failed: {str(e)}"
-            )
+            for box in boxes:
+                confidence = box.conf[0]
+                
+                # Apply confidence threshold
+                if confidence >= self.confidence_threshold:
+                    x1, y1, x2, y2 = box.xyxy[0]
+                    x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
+                    
+                    # Crop face
+                    face_crop = image[y1:y2, x1:x2]
+                    
+                    # Resize for embedding
+                    face_resized = cv2.resize(face_crop, (160, 160))
+                    
+                    detected_faces.append({
+                        'bbox': [x1, y1, x2, y2],
+                        'confidence': float(confidence),
+                        'face_image': face_resized
+                    })
+        
+        return detected_faces
 
-    def generate_embedding(self, face_image: np.ndarray) -> np.ndarray:
+    def generate_embedding(self, face_image):
         """
-        Generate face embedding with GPU support and error handling.
+        Generate face embedding
+        
+        Args:
+            face_image (np.ndarray): Preprocessed face image
+        
+        Returns:
+            np.ndarray: Face embedding
         """
-        try:
-            face_tensor = torch.from_numpy(face_image).float().permute(2, 0, 1).unsqueeze(0) / 255.0
-            
-            if torch.cuda.is_available():
-                face_tensor = face_tensor.cuda()
-            
-            with torch.no_grad():
-                embedding = self.embedding_model(face_tensor).cpu().squeeze().numpy()
-            
-            # Normalize embedding
-            return embedding / np.linalg.norm(embedding)
-        except Exception as e:
-            logger.error(f"Error generating face embedding: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to generate face embedding: {str(e)}"
-            )
+        # Preprocess for PyTorch
+        face_tensor = torch.from_numpy(face_image).float().permute(2, 0, 1).unsqueeze(0) / 255.0
+        
+        # Generate embedding
+        with torch.no_grad():
+            embedding = self.embedding_model(face_tensor).squeeze().numpy()
+        
+        # Normalize embedding
+        return embedding / np.linalg.norm(embedding)
 
-    def recognize_face(self, embedding: np.ndarray) -> Dict:
+    def recognize_face(self, embedding):
         """
-        Recognize a face based on its embedding with improved response structure.
+        Recognize a face based on its embedding
+        
+        Args:
+            embedding (np.ndarray): Face embedding
+        
+        Returns:
+            dict: Recognition result
         """
-        try:
-            if len(self.known_encodings) == 0:
-                return {
-                    'recognized': False,
-                    'name': 'Unknown',
-                    'confidence': 0.0,
-                    'message': 'No known faces in database'
-                }
-            
-            distances = [cosine(embedding, known_enc) for known_enc in self.known_encodings]
-            min_distance = min(distances)
-            best_match_index = distances.index(min_distance)
-            
-            confidence = 1 - min_distance
-            is_recognized = min_distance <= self.recognition_threshold
-            
+        if len(self.known_encodings) == 0:
             return {
-                'recognized': is_recognized,
-                'name': self.known_names[best_match_index] if is_recognized else 'Unknown',
-                'confidence': confidence,
-                'message': 'Face recognized successfully' if is_recognized else 'No matching face found'
+                'recognized': False,
+                'name': 'Unknown',
+                'confidence': 0.0
             }
-        except Exception as e:
-            logger.error(f"Error in face recognition: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Face recognition failed: {str(e)}"
-            )
+        
+        # Calculate cosine distances
+        distances = [cosine(embedding, known_enc) for known_enc in self.known_encodings]
+        
+        # Find best match
+        min_distance = min(distances)
+        best_match_index = distances.index(min_distance)
+        
+        # Check if within recognition threshold
+        if min_distance <= self.recognition_threshold:
+            return {
+                'recognized': True,
+                'name': self.known_names[best_match_index],
+                'confidence': 1 - min_distance
+            }
+        else:
+            return {
+                'recognized': False,
+                'name': 'Unknown',
+                'confidence': 1 - min_distance
+            }
 
-# Create FastAPI Application
-app = FastAPI(
-    title="Attendance Recognition API",
-    description="API for face detection and recognition using YOLO and FaceNet",
-    version="1.0.0"
-)
+# FastAPI Application
+app = FastAPI(title="Attendance Recognition API")
 
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # Allows all origins
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
 )
 
 # Global attendance system instance
-attendance_system = None
-
-@app.on_event("startup")
-async def startup_event():
-    """Initialize the attendance system on startup"""
-    global attendance_system
-    try:
-        attendance_system = AttendanceSystem()
-        logger.info("AttendanceSystem initialized successfully")
-    except Exception as e:
-        logger.error(f"Failed to initialize AttendanceSystem: {e}")
-        raise
+attendance_system = AttendanceSystem()
 
 @app.post("/upload_and_recognize/")
-async def upload_and_recognize(file: UploadFile = File(...)) -> JSONResponse:
+async def upload_and_recognize(file: UploadFile = File(...)):
     """
-    Endpoint to upload an image and perform face recognition.
+    Endpoint to upload image to Cloudinary and recognize faces
     """
     if not file:
-        raise HTTPException(status_code=400, detail="No file provided")
+        logging.error("No file received in the request.")
+        raise HTTPException(status_code=400, detail="File is missing.")
     
     try:
-        # Upload to Cloudinary
-        cloudinary_url = await attendance_system.upload_to_cloudinary(file)
+        # Upload image to Cloudinary
+        cloudinary_url = attendance_system.upload_to_cloudinary(file)
         
-        # Download and process image
+        # Download image from Cloudinary URL
         image = attendance_system.download_image_from_url(cloudinary_url)
+        
+        # Detect faces
         detected_faces = attendance_system.detect_faces(image)
         
-        # Process each detected face
+        # Recognize faces
         results = []
         for face_data in detected_faces:
+            # Generate embedding
             embedding = attendance_system.generate_embedding(face_data['face_image'])
+            
+            # Recognize face
             recognition_result = attendance_system.recognize_face(embedding)
             
+            # Combine detection and recognition results
             result = {
                 'bbox': face_data['bbox'],
                 'detection_confidence': face_data['confidence'],
                 'cloudinary_url': cloudinary_url,
                 **recognition_result
             }
+            
             results.append(result)
         
         return JSONResponse(content={
-            'status': 'success',
             'faces_detected': len(results),
             'cloudinary_url': cloudinary_url,
             'results': results
         })
     
     except Exception as e:
-        logger.error(f"Error processing request: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error processing request: {str(e)}"
-        )
+        logging.error(f"Face recognition error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/health")
-async def health_check():
-    """
-    Health check endpoint to verify API status
-    """
-    return {"status": "healthy", "timestamp": datetime.datetime.utcnow()}
-
+# Run the application with Hypercorn
 def main():
-    """
-    Main function to run the application
-    """
     import hypercorn.asyncio
     from hypercorn.config import Config
     
     config = Config()
-    port = int(os.getenv("PORT", "8000"))
-    config.bind = [f"0.0.0.0:{port}"]
+    config.bind = ["0.0.0.0:8000"]
     
     import asyncio
     asyncio.run(hypercorn.asyncio.serve(app, config))
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
